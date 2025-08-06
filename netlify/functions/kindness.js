@@ -36,27 +36,19 @@ exports.handler = async (event) => {
           }
         },
         {
-          type: 'input',
-          block_id: 'type_block',
-          label: {
-            type: 'plain_text',
-            text: 'Was this internal or external?'
-          },
-          element: {
-            type: 'static_select',
-            action_id: 'kindness_type',
-            options: [
-              {
-                text: { type: 'plain_text', text: 'Internal' },
-                value: 'internal'
-              },
-              {
-                text: { type: 'plain_text', text: 'External' },
-                value: 'external'
-              }
-            ]
-          }
-        },
+		  type: 'input',
+		  block_id: 'prayer_block',
+		  optional: true,
+		  label: {
+			type: 'plain_text',
+			text: 'How can we pray for this situation?'
+		  },
+		  element: {
+			type: 'plain_text_input',
+			action_id: 'prayer',
+			multiline: true
+		  }
+		},
         {
           type: 'input',
           block_id: 'anon_block',
