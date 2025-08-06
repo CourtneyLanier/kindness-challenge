@@ -1,10 +1,13 @@
 const axios = require('axios');
 
-exports.handler = async (event) => {
-	console.log('▶️ interact invoked with body:', event.body);
-	console.log('▶️ headers:', JSON.stringify(event.headers));
+// Log the channel ID at cold start
+console.log('▶️ CHANNEL_ID from env:', process.env.CHANNEL_ID);
 
-  // Always respond with JSON so Slack doesn’t error
+exports.handler = async (event) => {
+  console.log('▶️ interact invoked with body:', event.body);
+  console.log('▶️ headers:', JSON.stringify(event.headers));
+
+  // Utility to clear the Slack modal
   const respondClear = () => ({
     statusCode: 200,
     headers: { 'Content-Type': 'application/json' },
@@ -24,7 +27,7 @@ exports.handler = async (event) => {
       const anon = values.anon_block.anon_choice.selected_option.value;
       const username = payload.user.name;
 
-      // Build the text
+      // Build the message text
       let text = anon === 'yes'
         ? `A 3 Strand teammate shared: _"${description}"_`
         : `${username} shared: _"${description}"_`;
@@ -33,25 +36,33 @@ exports.handler = async (event) => {
         text += `\n🙏 Prayer request: _"${prayer}"_`;
       }
 
-      // Post to Slack, but if it fails we still close the modal
+      // Log what we're about to post
+      console.log(`▶️ Posting message to channel ${process.env.CHANNEL_ID}:`, text);
+
+      // Post to Slack, capture and log the response
       try {
-        await axios.post('https://slack.com/api/chat.postMessage',
+        const slackRes = await axios.post(
+          'https://slack.com/api/chat.postMessage',
           { channel: process.env.CHANNEL_ID, text },
-          { headers: {
+          {
+            headers: {
               Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
               'Content-Type': 'application/json'
             }
           }
         );
+        console.log('▶️ Slack API response:', slackRes.data);
+        if (!slackRes.data.ok) {
+          console.error('❌ Slack returned an error:', slackRes.data.error);
+        }
       } catch (postErr) {
-        console.error('Error posting to Slack:', postErr.response?.data || postErr);
+        console.error('❌ Error posting to Slack:', postErr.response?.data || postErr);
       }
     }
   } catch (err) {
-    console.error('Error handling submission:', err);
-    // We could return errors to Slack here, but we'll just clear the modal
+    console.error('❌ Error handling submission:', err);
   }
 
-  // Always clear the modal so Slack shows no error
+  // Always clear the modal so Slack doesn’t show an error
   return respondClear();
 };
