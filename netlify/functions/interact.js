@@ -1,6 +1,9 @@
 const axios = require('axios');
 
 exports.handler = async (event) => {
+	console.log('▶️ interact invoked with body:', event.body);
+	console.log('▶️ headers:', JSON.stringify(event.headers));
+
   // Always respond with JSON so Slack doesn’t error
   const respondClear = () => ({
     statusCode: 200,
