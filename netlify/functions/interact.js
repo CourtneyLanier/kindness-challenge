@@ -28,13 +28,14 @@ exports.handler = async (event) => {
       const username = payload.user.name;
 
       // Build the base message text (without prefix/count)
-      let baseText = anon === 'yes'
-        ? `A 3 Strand teammate shared: _"${description}"_`
-        : `${username} shared: _"${description}"_`;
-      if (prayer) {
-        baseText += `\n🙏 Prayer request: _"${prayer}"_`;
-      }
-
+      let baseText;
+	  if (anon === 'yes') {
+	    // they said “Yes, include my name”
+		baseText = `${username} shared: _"${description}"_`;
+	  } else {
+		// they said “No, keep me anonymous”
+		baseText = `A 3 Strand teammate shared: _"${description}"_`;
+	  }
       // Fetch current count from our count function
       const host = event.headers.host; // e.g. kindness-challenge.netlify.app
       let count = 0;
