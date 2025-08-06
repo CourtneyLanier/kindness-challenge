@@ -2,7 +2,8 @@ const axios = require('axios');
 
 exports.handler = async (event) => {
   // Parse the Slack payload
-  const payload = JSON.parse(event.body.payload);
+  const params = new URLSearchParams(event.body);
+	const payload = JSON.parse(params.get('payload'));
 
   if (payload.type === 'view_submission' && payload.view.callback_id === 'kindness_modal') {
     const values = payload.view.state.values;
