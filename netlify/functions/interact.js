@@ -27,19 +27,39 @@ exports.handler = async (event) => {
       const anon = values.anon_block.anon_choice.selected_option.value;
       const username = payload.user.name;
 
-      // Build the message text
-      let text = anon === 'yes'
+      // Build the base message text (without prefix/count)
+      let baseText = anon === 'yes'
         ? `A 3 Strand teammate shared: _"${description}"_`
         : `${username} shared: _"${description}"_`;
-
       if (prayer) {
-        text += `\n🙏 Prayer request: _"${prayer}"_`;
+        baseText += `\n🙏 Prayer request: _"${prayer}"_`;
       }
 
-      // Log what we're about to post
+      // Fetch current count from our count function
+      const host = event.headers.host; // e.g. kindness-challenge.netlify.app
+      let count = 0;
+      try {
+        const countRes = await axios.get(`https://${host}/.netlify/functions/count`);
+        count = countRes.data.count || 0;
+        console.log('▶️ fetched count:', count);
+      } catch (err) {
+        console.error('❌ error fetching count:', err);
+      }
+
+      // Compute next act number, remaining, and candle bar
+      const nextAct = count + 1;
+      const remaining = Math.max(0, 100 - nextAct);
+      const candleBar = '🔥'.repeat(nextAct) + '🕯️'.repeat(remaining);
+
+      // Final text with progress
+      const text = 
+        `Act #${nextAct}: ${baseText}` +
+        `\nOnly ${remaining} more to go!` +
+        `\n${candleBar}`;
+
       console.log(`▶️ Posting message to channel ${process.env.CHANNEL_ID}:`, text);
 
-      // Post to Slack, capture and log the response
+      // Post to Slack
       try {
         const slackRes = await axios.post(
           'https://slack.com/api/chat.postMessage',
