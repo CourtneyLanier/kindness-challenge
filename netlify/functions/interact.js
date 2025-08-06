@@ -36,6 +36,9 @@ exports.handler = async (event) => {
 		// they said “No, keep me anonymous”
 		baseText = `A 3 Strand teammate shared: _"${description}"_`;
 	  }
+	  if (prayer) {
+		baseText += `\n🙏 Prayer request: _"${prayer}"_`;
+	  }
       // Fetch current count from our count function
       const host = event.headers.host; // e.g. kindness-challenge.netlify.app
       let count = 0;
