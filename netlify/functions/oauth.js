@@ -12,14 +12,17 @@ exports.handler = async (event) => {
       return html(400, `<h1>Missing code</h1><p>Install via Slack first.</p>`);
     }
 
-    // Sanity check: Blobs config
+    // ---- Blobs env check (log booleans only) ----
     const siteID = process.env.NETLIFY_SITE_ID;
     const token  = process.env.NETLIFY_API_TOKEN;
+    console.log('Blobs env present? siteID:', !!siteID, ' token:', !!token);
     if (!siteID || !token) {
       return html(
         500,
         `<h1>Server not configured</h1>
-         <p>NETLIFY_SITE_ID and/or NETLIFY_API_TOKEN are missing.</p>`
+         <p>NETLIFY_SITE_ID and/or NETLIFY_API_TOKEN are missing in the function runtime.</p>
+         <p>After adding them in Netlify &gt; Site settings &gt; Build &amp; deploy &gt; Environment,
+         you must trigger a new deploy.</p>`
       );
     }
 
@@ -49,7 +52,7 @@ exports.handler = async (event) => {
 
     // Store install in Netlify Blobs (per team)
     const { getStore } = await import('@netlify/blobs');
-    const store = getStore('kindness-installs', { siteID, token });
+    const store = getStore('kindness-installs', { siteID, token }); // <-- pass explicitly
 
     const installRecord = {
       team_id,
@@ -57,7 +60,6 @@ exports.handler = async (event) => {
       bot_token,
       bot_user,
       installed_at: Date.now(),
-      // per-workspace config; they’ll set these later via /kindness-config
       channel_id: null,
       goal: 100,
       start: null, // unix timestamp (seconds)
