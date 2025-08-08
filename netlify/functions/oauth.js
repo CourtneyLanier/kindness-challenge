@@ -12,18 +12,23 @@ exports.handler = async (event) => {
       return html(400, `<h1>Missing code</h1><p>Install via Slack first.</p>`);
     }
 
-    const redirect_uri = `${process.env.APP_BASE_URL}/.netlify/functions/oauth`;
-    const client_id = process.env.SLACK_CLIENT_ID;
+    // Sanity check: Blobs config
+    const siteID = process.env.NETLIFY_SITE_ID;
+    const token  = process.env.NETLIFY_API_TOKEN;
+    if (!siteID || !token) {
+      return html(
+        500,
+        `<h1>Server not configured</h1>
+         <p>NETLIFY_SITE_ID and/or NETLIFY_API_TOKEN are missing.</p>`
+      );
+    }
+
+    const redirect_uri  = `${process.env.APP_BASE_URL}/.netlify/functions/oauth`;
+    const client_id     = process.env.SLACK_CLIENT_ID;
     const client_secret = process.env.SLACK_CLIENT_SECRET;
 
     // Exchange code for tokens
-    const form = new URLSearchParams({
-      code,
-      client_id,
-      client_secret,
-      redirect_uri
-    });
-
+    const form = new URLSearchParams({ code, client_id, client_secret, redirect_uri });
     const tokenRes = await axios.post(
       'https://slack.com/api/oauth.v2.access',
       form.toString(),
@@ -39,13 +44,12 @@ exports.handler = async (event) => {
     // Pull out what we need
     const team_id   = data.team?.id;
     const team_name = data.team?.name;
-    const bot_token = data.access_token;     // workspace-specific bot token
+    const bot_token = data.access_token; // workspace-specific bot token
     const bot_user  = data.bot_user_id;
 
     // Store install in Netlify Blobs (per team)
-    // We use a dynamic import so this CommonJS file can load the ESM blobs client.
     const { getStore } = await import('@netlify/blobs');
-    const store = getStore('kindness-installs');
+    const store = getStore('kindness-installs', { siteID, token });
 
     const installRecord = {
       team_id,
@@ -56,8 +60,8 @@ exports.handler = async (event) => {
       // per-workspace config; they’ll set these later via /kindness-config
       channel_id: null,
       goal: 100,
-      start: null,    // unix timestamp (seconds) when they choose
-      end: null       // unix timestamp (seconds) when they choose
+      start: null, // unix timestamp (seconds)
+      end: null    // unix timestamp (seconds)
     };
 
     await store.set(`team:${team_id}`, JSON.stringify(installRecord));
