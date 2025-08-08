@@ -1,11 +1,39 @@
 const axios = require('axios');
+const crypto = require('crypto');
 
-// Log the channel ID at cold start
 console.log('▶️ CHANNEL_ID from env:', process.env.CHANNEL_ID);
 
+// --- Slack signature verification helper ---
+function isSlackSignatureValid({ signingSecret, body, timestamp, signature }) {
+  if (!timestamp || !signature) return false;
+
+  // prevent replay attacks
+  const now = Math.floor(Date.now() / 1000);
+  if (Math.abs(now - Number(timestamp)) > 60 * 5) {
+    return false;
+  }
+
+  const basestring = `v0:${timestamp}:${body}`;
+  const hmac = crypto.createHmac('sha256', signingSecret).update(basestring).digest('hex');
+  const mySig = `v0=${hmac}`;
+
+  try {
+    return crypto.timingSafeEqual(Buffer.from(mySig, 'utf8'), Buffer.from(signature, 'utf8'));
+  } catch {
+    return false;
+  }
+}
+
 exports.handler = async (event) => {
-  console.log('▶️ interact invoked with body:', event.body);
-  console.log('▶️ headers:', JSON.stringify(event.headers));
+  // Verify Slack signature
+  const timestamp = event.headers['x-slack-request-timestamp'];
+  const signature = event.headers['x-slack-signature'];
+  const signingSecret = process.env.SLACK_SIGNING_SECRET;
+
+  if (!isSlackSignatureValid({ signingSecret, body: event.body, timestamp, signature })) {
+    console.error('❌ Invalid Slack signature');
+    return { statusCode: 401, body: 'Invalid signature' };
+  }
 
   // Utility to clear the Slack modal
   const respondClear = () => ({
@@ -15,11 +43,9 @@ exports.handler = async (event) => {
   });
 
   try {
-    // Parse the urlencoded body to get the Slack payload
     const params = new URLSearchParams(event.body);
     const payload = JSON.parse(params.get('payload'));
 
-    // Only handle our modal submissions
     if (payload.type === 'view_submission' && payload.view.callback_id === 'kindness_modal') {
       const values = payload.view.state.values;
       const description = values.description_block.description.value;
@@ -27,66 +53,58 @@ exports.handler = async (event) => {
       const anon = values.anon_block.anon_choice.selected_option.value;
       const username = payload.user.name;
 
-      // Build the base message text (without prefix/count)
+      // Build base text + prayer
       let baseText;
-	  if (anon === 'yes') {
-	    // they said “Yes, include my name”
-		baseText = `${username} shared: _"${description}"_`;
-	  } else {
-		// they said “No, keep me anonymous”
-		baseText = `A 3 Strand teammate shared: _"${description}"_`;
-	  }
-	  if (prayer) {
-		baseText += `\n🙏 Prayer request: _"${prayer}"_`;
-	  }
-      // Fetch current count from our count function
-      const host = event.headers.host; // e.g. kindness-challenge.netlify.app
-      let count = 0;
-      try {
-        const countRes = await axios.get(`https://${host}/.netlify/functions/count`);
-        count = countRes.data.count || 0;
-        console.log('▶️ fetched count:', count);
-      } catch (err) {
-        console.error('❌ error fetching count:', err);
+      if (anon === 'yes') {
+        baseText = `${username} shared: _"${description}"_`;
+      } else {
+        baseText = `A 3 Strand teammate shared: _"${description}"_`;
+      }
+      if (prayer) {
+        baseText += `\n🙏 Prayer request: _"${prayer}"_`;
       }
 
-      // Compute next act number, remaining, and candle bar
+      // Count (pre-start gate optional; uncomment if you want to hide progress before your start date)
+      // const start = parseInt(process.env.CHALLENGE_START || '0', 10);
+      // const now = Math.floor(Date.now()/1000);
+      // if (start && now < start) {
+      //   await axios.post('https://slack.com/api/chat.postMessage',
+      //     { channel: process.env.CHANNEL_ID, text: baseText },
+      //     { headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`, 'Content-Type': 'application/json' } }
+      //   );
+      //   return respondClear();
+      // }
+
+      // Fetch current count from our count function
+      let count = 0;
+      try {
+        const host = event.headers.host; // e.g. kindness-challenge.netlify.app
+        const countRes = await axios.get(`https://${host}/.netlify/functions/count`);
+        count = countRes.data.count || 0;
+      } catch (err) {
+        console.error('❌ error fetching count:', err?.response?.data || err.message);
+      }
+
       const nextAct = count + 1;
       const remaining = Math.max(0, 100 - nextAct);
       const candleBar = '🔥'.repeat(nextAct) + '🕯️'.repeat(remaining);
 
-      // Final text with progress
-      const text = 
-        `Act #${nextAct}: ${baseText}` +
-        `\nOnly ${remaining} more to go!` +
-        `\n${candleBar}`;
+      const text = `Act #${nextAct}: ${baseText}\nOnly ${remaining} more to go!\n${candleBar}`;
 
-      console.log(`▶️ Posting message to channel ${process.env.CHANNEL_ID}:`, text);
-
-      // Post to Slack
       try {
         const slackRes = await axios.post(
           'https://slack.com/api/chat.postMessage',
           { channel: process.env.CHANNEL_ID, text },
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`,
-              'Content-Type': 'application/json'
-            }
-          }
+          { headers: { Authorization: `Bearer ${process.env.SLACK_BOT_TOKEN}`, 'Content-Type': 'application/json' } }
         );
-        console.log('▶️ Slack API response:', slackRes.data);
-        if (!slackRes.data.ok) {
-          console.error('❌ Slack returned an error:', slackRes.data.error);
-        }
+        if (!slackRes.data.ok) console.error('❌ Slack returned an error:', slackRes.data.error);
       } catch (postErr) {
-        console.error('❌ Error posting to Slack:', postErr.response?.data || postErr);
+        console.error('❌ Error posting to Slack:', postErr.response?.data || postErr.message);
       }
     }
   } catch (err) {
     console.error('❌ Error handling submission:', err);
   }
 
-  // Always clear the modal so Slack doesn’t show an error
   return respondClear();
 };
