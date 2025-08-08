@@ -11,6 +11,7 @@
   "license": "ISC",
   "type": "commonjs",
   "dependencies": {
+    "@netlify/blobs": "^10.0.8",
     "axios": "^1.11.0"
   }
 }
