@@ -3,41 +3,110 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Kindness Challenge</title>
+  <title>Rhoda · Slack Kindness Challenge | CeebSync</title>
+  <link rel="icon" type="image/png" href="/favicon.png" />
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; padding: 40px; max-width: 720px; margin: 0 auto; }
-    .card { border: 1px solid #e6e6e6; border-radius: 12px; padding: 24px; }
-    h1 { margin-top: 0; }
-    .btn img { height: 40px; }
-    code { background: #f6f8fa; padding: 2px 6px; border-radius: 6px; }
+    :root{
+      --bg:#eef1f5;
+      --ink:#333;
+      --header:#2c3e50;
+      --headline:#1d3557;
+      --accent:#457b9d;
+      --accent-light:#8ecae6;
+      --card:#ffffff;
+      --border:#e6e6e6;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0; font-family: 'Segoe UI', system-ui, -apple-system, Roboto, Arial, sans-serif;
+      background:var(--bg); color:var(--ink); display:flex; min-height:100vh; flex-direction:column;
+    }
+    header{
+      background:var(--header); color:#fff; padding:20px; display:flex; align-items:center; gap:14px;
+    }
+    header img{ height:38px }
+    header .brand{ font-weight:700; letter-spacing:.2px }
+    main{ flex:1; display:flex; align-items:center; justify-content:center; padding:40px 20px }
+    .card{
+      background:var(--card); border:1px solid var(--border); border-radius:14px; max-width:900px; width:100%;
+      padding:28px; box-shadow:0 2px 12px rgba(0,0,0,.04);
+    }
+    h1{ margin:0 0 8px; color:var(--headline); font-size:32px }
+    p.lede{ margin:0 0 18px; color:#555; font-size:18px }
+    .how{ margin:18px 0 24px }
+    .how li{ margin:6px 0 }
+    .row{ display:flex; gap:28px; flex-wrap:wrap; align-items:center }
+    .cta{
+      display:inline-block; text-decoration:none; background:var(--accent); color:#fff;
+      padding:12px 18px; border-radius:10px; font-weight:600;
+    }
+    .btn-secondary{
+      display:inline-block; text-decoration:none; border:1px solid var(--border); color:var(--headline);
+      padding:10px 14px; border-radius:10px; background:#fff;
+    }
+    .slack-button img{ height:44px }
+    footer{
+      text-align:center; padding:16px; background:var(--header); color:#fff; font-size:14px;
+    }
+    .links{ margin-top:18px; font-size:14px }
+    .links a{ color:var(--accent); text-decoration:none }
+    .links a:hover{ text-decoration:underline }
   </style>
 </head>
 <body>
-  <div class="card">
-    <h1>Kindness Challenge</h1>
-    <p>Invite Rhoda to your Slack workspace and run a seasonal kindness campaign (e.g., “100 Acts in 100 Days”). Anonymous submissions, in-channel progress bar, and workspace-specific settings.</p>
+  <header>
+    <img src="/LogoCeebSync.png" alt="CeebSync Logo" />
+    <div class="brand">CeebSync</div>
+  </header>
 
-    <!-- Replace CLIENT_ID and redirect URL below -->
-    <p class="btn">
-      <a href="https://slack.com/oauth/v2/authorize?client_id=293633679958.9306655997923&scope=commands,chat:write,chat:write.public,channels:read,channels:history&redirect_uri=https%3A%2F%2Fkindness.ceebsync.com%2F.netlify%2Ffunctions%2Foauth">
-        <img alt="Add to Slack" src="https://platform.slack-edge.com/img/add_to_slack.png" srcset="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x"/>
-      </a>
-    </p>
+  <main>
+    <section class="card">
+      <div class="row">
+        <div style="flex:1 1 420px; min-width:280px">
+          <h1>Rhoda · Slack Kindness Challenge</h1>
+          <p class="lede">
+            Run a seasonal kindness campaign right inside Slack (e.g., <strong>100 Acts in 100 Days</strong>).
+            Anonymous or named submissions, optional prayer requests, and an in-channel candle progress bar.
+          </p>
+          <ul class="how">
+            <li>Add Rhoda to your workspace.</li>
+            <li>Create/choose a channel and add the app.</li>
+            <li>Run <code>/kindness-config</code> to set Start/End/Goal.</li>
+            <li>Teammates use <code>/kindness</code>. Reset anytime with <code>/kindness-reset</code>.</li>
+          </ul>
 
-    <h3>How it works</h3>
-    <ol>
-      <li>Click “Add to Slack” and approve.</li>
-      <li>Create a channel (e.g., <code>#kindness-campaign</code>) and add the app.</li>
-      <li>In that channel, run <code>/kindness-config</code> to set dates and goal.</li>
-      <li>Teammates use <code>/kindness</code> to submit acts (with optional anonymity and prayer requests).</li>
-	  <li>Rhoda will update your channel, letting everyone celebrate the act of kindness and their progress towards the goal!</li>
-    </ol>
-    <p>Need help? Ping your workspace admin or the maintainer.</p>
-  </div>
-  <hr style="margin:32px 0;border:none;border-top:1px solid #e6e6e6" />
-    <p style="font-size:14px">
-	  <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
-    </p>
+          <!-- Add to Slack -->
+          <p class="slack-button">
+            <a
+              href="https://slack.com/oauth/v2/authorize?client_id=293633679958.9306655997923&scope=commands,chat:write,chat:write.public,channels:read,channels:history&redirect_uri=https%3A%2F%2Fkindness.ceebsync.com%2F.netlify%2Ffunctions%2Foauth">
+              <img alt="Add to Slack" src="https://platform.slack-edge.com/img/add_to_slack.png"
+                   srcset="https://platform.slack-edge.com/img/add_to_slack.png 1x, https://platform.slack-edge.com/img/add_to_slack@2x.png 2x" />
+            </a>
+          </p>
 
+          <div class="links">
+            <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a>
+          </div>
+        </div>
+
+        <div style="flex:1 1 320px; min-width:260px">
+          <div style="border:1px solid var(--border); border-radius:12px; padding:16px">
+            <h3 style="margin-top:0;color:var(--headline)">What you’ll see in Slack</h3>
+            <p style="margin:8px 0 12px;color:#555">
+              Submissions post like:<br>
+              <em>“Act #23: A {Workspace} teammate shared… Only 77 more to go!”</em><br>
+              with a 🔥/🕯️ candle bar showing progress.
+            </p>
+            <a class="btn-secondary" href="mailto:support@ceebsync.com">Questions? Email us</a>
+          </div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    © <span id="y"></span> CeebSync. All rights reserved.
+  </footer>
+  <script>document.getElementById('y').textContent = new Date().getFullYear();</script>
 </body>
 </html>
