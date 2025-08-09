@@ -151,8 +151,8 @@ export default async (req) => {
     const team_name = install?.team_name || payload.team?.domain || "teammate";
     const goal      = Number.isInteger(install?.goal) ? install.goal : 100;
     const start     = install?.start ?? 0;
-    const channel_id = install?.channel_id || process.env.CHANNEL_ID;
-    if (!channel_id) return clear();
+	const channel_id = install?.channel_id;
+	if (!channel_id) return clear(); // or DM the user to run /kindness-config
 
     let baseText = anon === "yes"
       ? `${username} shared: _"${description}"_`
