@@ -1,7 +1,31 @@
-// netlify/functions/config.js
+// netlify/functions/interact.js
 const axios = require('axios');
 const crypto = require('crypto');
 
+// --- Blobs SDK helpers ---
+async function getStoreClient() {
+  const { getStore } = await import('@netlify/blobs');
+  return getStore('kindness-installs', {
+    siteID: process.env.NETLIFY_SITE_ID,
+    token: process.env.NETLIFY_API_TOKEN
+  });
+}
+async function fetchInstall(team_id) {
+  try {
+    const store = await getStoreClient();
+    const raw = await store.get(`team:${team_id}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.error('fetchInstall error:', e.message || e);
+    return null;
+  }
+}
+async function saveInstall(team_id, record) {
+  const store = await getStoreClient();
+  await store.set(`team:${team_id}`, JSON.stringify(record));
+}
+
+// --- Slack signature verification ---
 function isSlackSignatureValid({ signingSecret, body, timestamp, signature }) {
   if (!timestamp || !signature) return false;
   const now = Math.floor(Date.now() / 1000);
@@ -13,20 +37,21 @@ function isSlackSignatureValid({ signingSecret, body, timestamp, signature }) {
   catch { return false; }
 }
 
-// Read install (prefill)
-async function fetchInstall(team_id) {
-  const siteID = process.env.NETLIFY_SITE_ID;
-  const token  = process.env.NETLIFY_API_TOKEN;
-  const key    = `team:${team_id}`;
-  const url    = `https://api.netlify.com/api/v1/blobs/sites/${siteID}/stores/kindness-installs/items/${encodeURIComponent(key)}`;
-  try {
-    const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` }, responseType: 'text' });
-    return res.data ? JSON.parse(res.data) : null;
-  } catch (e) {
-    if (e.response && e.response.status === 404) return null;
-    console.error('fetchInstall error', e.response?.data || e.message);
-    return null;
-  }
+// --- Count messages posted by this app's bot since `oldest` ---
+async function countActs({ botToken, channel_id, oldest, bot_user }) {
+  let total = 0;
+  let cursor = '';
+  do {
+    const resp = await axios.get('https://slack.com/api/conversations.history', {
+      headers: { Authorization: `Bearer ${botToken}` },
+      params: { channel: channel_id, oldest, limit: 200, cursor }
+    });
+    if (!resp.data.ok) throw new Error(`conversations.history error: ${resp.data.error}`);
+    const msgs = resp.data.messages || [];
+    total += msgs.filter(m => m.bot_id && bot_user && m.bot_id === bot_user).length;
+    cursor = resp.data.response_metadata?.next_cursor || '';
+  } while (cursor);
+  return total;
 }
 
 exports.handler = async (event) => {
@@ -38,52 +63,130 @@ exports.handler = async (event) => {
   }
 
   const params = new URLSearchParams(event.body);
-  const trigger_id = params.get('trigger_id');
-  const team_id    = params.get('team_id');
-  const channel_id = params.get('channel_id'); // where /kindness-config was used
+  const payload = JSON.parse(params.get('payload') || '{}');
 
-  // Guard: we only support running in a channel (not DMs)
-  if (!channel_id || !channel_id.startsWith('C')) {
-    return { statusCode: 200, body: 'Please run /kindness-config inside the channel you want to use.' };
+  const clear = () => ({
+    statusCode: 200,
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ response_action: 'clear' })
+  });
+
+  // ===== Save config (bind to channel where command ran) =====
+  if (payload.type === 'view_submission' && payload.view.callback_id === 'kindness_config_modal') {
+    const meta       = JSON.parse(payload.view.private_metadata || '{}');
+    const team_id    = meta.team_id || payload.team?.id;
+    const channel_id = meta.channel_id;
+
+    if (!channel_id || !channel_id.startsWith('C')) {
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          response_action: 'errors',
+          errors: { start_block: 'Run /kindness-config inside the channel you want to use.' }
+        })
+      };
+    }
+
+    const values   = payload.view.state.values;
+    const startStr = values.start_block?.start?.value?.trim() || '';
+    const endStr   = values.end_block?.end?.value?.trim() || '';
+    const goalStr  = values.goal_block?.goal?.value?.trim() || '';
+
+    const errors = {};
+    const goal = parseInt(goalStr, 10);
+    if (!goal || goal < 1) errors['goal_block'] = 'Enter a positive number';
+
+    const toTs = (s) => s ? Math.floor(new Date(`${s}T00:00:00Z`).getTime() / 1000) : null;
+    const start = toTs(startStr);
+    const end   = toTs(endStr);
+    if (!start) errors['start_block'] = 'Use YYYY-MM-DD';
+    if (!end)   errors['end_block'] = 'Use YYYY-MM-DD';
+    if (start && end && end < start) errors['end_block'] = 'End must be after Start';
+
+    if (Object.keys(errors).length) {
+      return {
+        statusCode: 200,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ response_action: 'errors', errors })
+      };
+    }
+
+    const install = await fetchInstall(team_id);
+    const record = { ...(install || {}), team_id, channel_id, goal, start, end };
+    await saveInstall(team_id, record);
+    return clear();
   }
 
-  const install  = await fetchInstall(team_id);
-  const botToken = install?.bot_token || process.env.SLACK_BOT_TOKEN;
+  // ===== Handle kindness modal submission =====
+  if (payload.type === 'view_submission' && payload.view.callback_id === 'kindness_modal') {
+    const meta = JSON.parse(payload.view.private_metadata || '{}');
+    const team_id = meta.team_id || payload.team?.id;
 
-  const goal  = install?.goal ?? 100;
-  const start = install?.start ? new Date(install.start * 1000).toISOString().slice(0,10) : '';
-  const end   = install?.end   ? new Date(install.end   * 1000).toISOString().slice(0,10) : '';
+    const values = payload.view.state.values;
+    const description = values.description_block?.description?.value || '';
+    const prayer      = values.prayer_block?.prayer?.value || '';
+    const anon        = values.anon_block?.anon_choice?.selected_option?.value || 'no';
+    const username    = payload.user?.name || 'Someone';
 
-  const view = {
-    type: 'modal',
-    callback_id: 'kindness_config_modal',
-    title: { type: 'plain_text', text: 'Kindness Config' },
-    submit: { type: 'plain_text', text: 'Save' },
-    close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ team_id, channel_id }), // bind to this channel
-    blocks: [
-      { type: 'input', block_id: 'start_block',
-        label: { type: 'plain_text', text: 'Start date (YYYY-MM-DD)' },
-        element: { type: 'plain_text_input', action_id: 'start', initial_value: start, placeholder: { type: 'plain_text', text: '2025-09-16' } }
-      },
-      { type: 'input', block_id: 'end_block',
-        label: { type: 'plain_text', text: 'End date (YYYY-MM-DD)' },
-        element: { type: 'plain_text_input', action_id: 'end', initial_value: end, placeholder: { type: 'plain_text', text: '2025-12-25' } }
-      },
-      { type: 'input', block_id: 'goal_block',
-        label: { type: 'plain_text', text: 'Goal (number of acts)' },
-        element: { type: 'plain_text_input', action_id: 'goal', initial_value: String(goal) }
+    const install   = await fetchInstall(team_id);
+    const botToken  = install?.bot_token || process.env.SLACK_BOT_TOKEN;
+    const bot_user  = install?.bot_user || null;
+    const team_name = install?.team_name || payload.team?.domain || 'teammate';
+    const goal      = Number.isInteger(install?.goal) ? install.goal : 100;
+    const start     = install?.start ?? 0;
+    const channel_id = install?.channel_id || process.env.CHANNEL_ID;
+
+    if (!channel_id) return clear();
+
+    let baseText;
+    if (anon === 'yes') {
+      baseText = `${username} shared: _"${description}"_`;
+    } else {
+      baseText = `A ${team_name} teammate shared: _"${description}"_`;
+    }
+    if (prayer) baseText += `\n🙏 Prayer request: _"${prayer}"_`;
+
+    const now = Math.floor(Date.now() / 1000);
+    if (start && now < start) {
+      try {
+        await axios.post('https://slack.com/api/chat.postMessage',
+          { channel: channel_id, text: baseText },
+          { headers: { Authorization: `Bearer ${botToken}`, 'Content-Type': 'application/json' } }
+        );
+      } catch (e) {
+        console.error('post (pre-start) error:', e.response?.data || e.message);
       }
-    ]
-  };
+      return clear();
+    }
 
-  try {
-    await axios.post('https://slack.com/api/views.open', { trigger_id, view }, {
-      headers: { Authorization: `Bearer ${botToken}`, 'Content-Type': 'application/json' }
-    });
-    return { statusCode: 200, body: '' };
-  } catch (err) {
-    console.error('views.open error', err.response?.data || err.message);
-    return { statusCode: 500, body: 'Error opening config modal' };
+    let count = 0;
+    try {
+      count = await countActs({ botToken, channel_id, oldest: start || 0, bot_user });
+    } catch (e) {
+      console.error('countActs error:', e.message);
+    }
+
+    const nextAct = count + 1;
+    const remaining = Math.max(0, goal - nextAct);
+    const lit   = Math.min(nextAct, goal);
+    const unlit = Math.max(goal - lit, 0);
+    const candleBar = '🔥'.repeat(lit) + '🕯️'.repeat(unlit);
+
+    const text = `Act #${nextAct}: ${baseText}\nOnly ${remaining} more to go!\n${candleBar}`;
+
+    try {
+      const res = await axios.post('https://slack.com/api/chat.postMessage',
+        { channel: channel_id, text },
+        { headers: { Authorization: `Bearer ${botToken}`, 'Content-Type': 'application/json' } }
+      );
+      if (!res.data.ok) console.error('chat.postMessage error:', res.data.error);
+    } catch (e) {
+      console.error('postMessage error:', e.response?.data || e.message);
+    }
+
+    return clear();
   }
+
+  return clear();
 };

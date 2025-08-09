@@ -13,18 +13,18 @@ function isSlackSignatureValid({ signingSecret, body, timestamp, signature }) {
   catch { return false; }
 }
 
-// Read install (prefill)
+// Blobs (SDK) — read existing install to prefill
 async function fetchInstall(team_id) {
-  const siteID = process.env.NETLIFY_SITE_ID;
-  const token  = process.env.NETLIFY_API_TOKEN;
-  const key    = `team:${team_id}`;
-  const url    = `https://api.netlify.com/api/v1/blobs/sites/${siteID}/stores/kindness-installs/items/${encodeURIComponent(key)}`;
   try {
-    const res = await axios.get(url, { headers: { Authorization: `Bearer ${token}` }, responseType: 'text' });
-    return res.data ? JSON.parse(res.data) : null;
+    const { getStore } = await import('@netlify/blobs');
+    const store = getStore('kindness-installs', {
+      siteID: process.env.NETLIFY_SITE_ID,
+      token: process.env.NETLIFY_API_TOKEN
+    });
+    const raw = await store.get(`team:${team_id}`);
+    return raw ? JSON.parse(raw) : null;
   } catch (e) {
-    if (e.response && e.response.status === 404) return null;
-    console.error('fetchInstall error', e.response?.data || e.message);
+    console.error('fetchInstall error:', e.message || e);
     return null;
   }
 }
@@ -42,7 +42,6 @@ exports.handler = async (event) => {
   const team_id    = params.get('team_id');
   const channel_id = params.get('channel_id'); // where /kindness-config was used
 
-  // Guard: we only support running in a channel (not DMs)
   if (!channel_id || !channel_id.startsWith('C')) {
     return { statusCode: 200, body: 'Please run /kindness-config inside the channel you want to use.' };
   }
@@ -60,15 +59,15 @@ exports.handler = async (event) => {
     title: { type: 'plain_text', text: 'Kindness Config' },
     submit: { type: 'plain_text', text: 'Save' },
     close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ team_id, channel_id }), // bind to this channel
+    private_metadata: JSON.stringify({ team_id, channel_id }),
     blocks: [
       { type: 'input', block_id: 'start_block',
         label: { type: 'plain_text', text: 'Start date (YYYY-MM-DD)' },
-        element: { type: 'plain_text_input', action_id: 'start', initial_value: start, placeholder: { type: 'plain_text', text: '2025-09-16' } }
+        element: { type: 'plain_text_input', action_id: 'start', initial_value: start }
       },
       { type: 'input', block_id: 'end_block',
         label: { type: 'plain_text', text: 'End date (YYYY-MM-DD)' },
-        element: { type: 'plain_text_input', action_id: 'end', initial_value: end, placeholder: { type: 'plain_text', text: '2025-12-25' } }
+        element: { type: 'plain_text_input', action_id: 'end', initial_value: end }
       },
       { type: 'input', block_id: 'goal_block',
         label: { type: 'plain_text', text: 'Goal (number of acts)' },
