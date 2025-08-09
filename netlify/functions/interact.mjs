@@ -105,6 +105,35 @@ export default async (req) => {
     await saveInstall(team_id, record);
     return clear();
   }
+  // ---- Reset season (from /kindness-reset modal) ----
+  if (payload.type === "view_submission" && payload.view.callback_id === "kindness_reset_modal") {
+    const meta    = JSON.parse(payload.view.private_metadata || "{}");
+    const team_id = meta.team_id || payload.team?.id;
+
+    const v = payload.view.state.values;
+    const startStr = v.start_block?.start?.value?.trim() || "";
+    const endStr   = v.end_block?.end?.value?.trim() || "";
+    const goalStr  = v.goal_block?.goal?.value?.trim() || "";
+
+    const errors = {};
+    const goal = parseInt(goalStr, 10);
+    if (!goal || goal < 1) errors["goal_block"] = "Enter a positive number";
+    const toTs = (s) => s ? Math.floor(new Date(`${s}T00:00:00Z`).getTime() / 1000) : null;
+    const start = toTs(startStr);
+    const end   = toTs(endStr);
+    if (!start) errors["start_block"] = "Use YYYY-MM-DD";
+    if (!end)   errors["end_block"] = "Use YYYY-MM-DD";
+    if (start && end && end < start) errors["end_block"] = "End must be after Start";
+    if (Object.keys(errors).length) return json(200, { response_action: "errors", errors });
+
+    const install = await fetchInstall(team_id);
+    if (!install) return json(200, { response_action: "clear" }); // nothing installed yet
+
+    // keep existing channel; just update dates/goal
+    const updated = { ...install, goal, start, end };
+    await saveInstall(team_id, updated);
+    return json(200, { response_action: "clear" });
+  }
 
   // ---- Kindness submission ----
   if (payload.type === "view_submission" && payload.view.callback_id === "kindness_modal") {
