@@ -13,7 +13,7 @@ function isSlackSignatureValid({ signingSecret, body, timestamp, signature }) {
   catch { return false; }
 }
 
-// Blobs helper (read install)
+// Read install (prefill)
 async function fetchInstall(team_id) {
   const siteID = process.env.NETLIFY_SITE_ID;
   const token  = process.env.NETLIFY_API_TOKEN;
@@ -40,14 +40,19 @@ exports.handler = async (event) => {
   const params = new URLSearchParams(event.body);
   const trigger_id = params.get('trigger_id');
   const team_id    = params.get('team_id');
+  const channel_id = params.get('channel_id'); // where /kindness-config was used
 
-  const install = await fetchInstall(team_id);
+  // Guard: we only support running in a channel (not DMs)
+  if (!channel_id || !channel_id.startsWith('C')) {
+    return { statusCode: 200, body: 'Please run /kindness-config inside the channel you want to use.' };
+  }
+
+  const install  = await fetchInstall(team_id);
   const botToken = install?.bot_token || process.env.SLACK_BOT_TOKEN;
 
   const goal  = install?.goal ?? 100;
   const start = install?.start ? new Date(install.start * 1000).toISOString().slice(0,10) : '';
   const end   = install?.end   ? new Date(install.end   * 1000).toISOString().slice(0,10) : '';
-  const channel = install?.channel_id || '';
 
   const view = {
     type: 'modal',
@@ -55,7 +60,7 @@ exports.handler = async (event) => {
     title: { type: 'plain_text', text: 'Kindness Config' },
     submit: { type: 'plain_text', text: 'Save' },
     close: { type: 'plain_text', text: 'Cancel' },
-    private_metadata: JSON.stringify({ team_id }),
+    private_metadata: JSON.stringify({ team_id, channel_id }), // bind to this channel
     blocks: [
       { type: 'input', block_id: 'start_block',
         label: { type: 'plain_text', text: 'Start date (YYYY-MM-DD)' },
@@ -68,10 +73,6 @@ exports.handler = async (event) => {
       { type: 'input', block_id: 'goal_block',
         label: { type: 'plain_text', text: 'Goal (number of acts)' },
         element: { type: 'plain_text_input', action_id: 'goal', initial_value: String(goal) }
-      },
-      { type: 'input', block_id: 'channel_block',
-        label: { type: 'plain_text', text: 'Channel (name like #kindness-campaign or channel ID Cxxxx)' },
-        element: { type: 'plain_text_input', action_id: 'channel', initial_value: channel }
       }
     ]
   };
