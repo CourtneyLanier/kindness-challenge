@@ -2,20 +2,33 @@ import axios from "axios";
 import crypto from "crypto";
 import { getStore } from "@netlify/blobs";
 
-// ---- Blobs helpers
-const store = getStore("kindness-installs", {
-  siteID: process.env.NETLIFY_SITE_ID,
-  token: process.env.NETLIFY_API_TOKEN
-});
-const getInstall  = async (team_id) => {
-  const raw = await store.get(`team:${team_id}`);
-  return raw ? JSON.parse(raw) : null;
-};
-const saveInstall = async (team_id, record) => {
-  await store.set(`team:${team_id}`, JSON.stringify(record));
-};
+/* ---------- Blobs helpers (defer store creation) ---------- */
+function getBlobsStore() {
+  const siteID = process.env.NETLIFY_SITE_ID;
+  const token  = process.env.NETLIFY_API_TOKEN;
+  if (!siteID || !token) {
+    throw new Error(`Missing Blobs env. siteID present? ${!!siteID} token present? ${!!token}`);
+  }
+  return getStore("kindness-installs", { siteID, token });
+}
 
-// ---- Signature check
+async function fetchInstall(team_id) {
+  try {
+    const store = getBlobsStore();
+    const raw = await store.get(`team:${team_id}`);
+    return raw ? JSON.parse(raw) : null;
+  } catch (e) {
+    console.error("fetchInstall error:", e.message || e);
+    return null;
+  }
+}
+
+async function saveInstall(team_id, record) {
+  const store = getBlobsStore();
+  await store.set(`team:${team_id}`, JSON.stringify(record));
+}
+
+/* ---------- Slack signature ---------- */
 function isSlackSignatureValid({ signingSecret, body, timestamp, signature }) {
   if (!timestamp || !signature) return false;
   const now = Math.floor(Date.now() / 1000);
@@ -27,7 +40,7 @@ function isSlackSignatureValid({ signingSecret, body, timestamp, signature }) {
   catch { return false; }
 }
 
-// ---- Count messages posted by this app's bot
+/* ---------- Count posts since oldest ---------- */
 async function countActs({ botToken, channel_id, oldest }) {
   let total = 0;
   let cursor = "";
@@ -38,13 +51,14 @@ async function countActs({ botToken, channel_id, oldest }) {
     });
     if (!resp.data.ok) throw new Error(`conversations.history error: ${resp.data.error}`);
     const msgs = resp.data.messages || [];
-    // Count messages that look like our posts (prefix 'Act #' or contain the candle bar)
+    // Heuristic: count our posts (they start with "Act #" or include candle bar)
     total += msgs.filter(m => typeof m.text === "string" && (m.text.startsWith("Act #") || m.text.includes("🕯️"))).length;
     cursor = resp.data.response_metadata?.next_cursor || "";
   } while (cursor);
   return total;
 }
 
+/* ---------- Main handler ---------- */
 export default async (req) => {
   const bodyText = await req.text();
   const timestamp = req.headers.get("x-slack-request-timestamp");
@@ -58,7 +72,7 @@ export default async (req) => {
   const payload = JSON.parse(new URLSearchParams(bodyText).get("payload") || "{}");
   const clear = () => json(200, { response_action: "clear" });
 
-  // ---- Save config (bind to channel where command ran)
+  // ---- Save config (bind to channel where /kindness-config ran) ----
   if (payload.type === "view_submission" && payload.view.callback_id === "kindness_config_modal") {
     const meta       = JSON.parse(payload.view.private_metadata || "{}");
     const team_id    = meta.team_id || payload.team?.id;
@@ -86,13 +100,13 @@ export default async (req) => {
 
     if (Object.keys(errors).length) return json(200, { response_action: "errors", errors });
 
-    const install = await getInstall(team_id);
+    const install = await fetchInstall(team_id);
     const record = { ...(install || {}), team_id, channel_id, goal, start, end };
     await saveInstall(team_id, record);
     return clear();
   }
 
-  // ---- Kindness submission
+  // ---- Kindness submission ----
   if (payload.type === "view_submission" && payload.view.callback_id === "kindness_modal") {
     const meta       = JSON.parse(payload.view.private_metadata || "{}");
     const team_id    = meta.team_id || payload.team?.id;
@@ -103,7 +117,7 @@ export default async (req) => {
     const anon        = v.anon_block?.anon_choice?.selected_option?.value || "no";
     const username    = payload.user?.name || "Someone";
 
-    const install   = await getInstall(team_id);
+    const install   = await fetchInstall(team_id);
     const botToken  = install?.bot_token || process.env.SLACK_BOT_TOKEN;
     const team_name = install?.team_name || payload.team?.domain || "teammate";
     const goal      = Number.isInteger(install?.goal) ? install.goal : 100;
@@ -111,9 +125,9 @@ export default async (req) => {
     const channel_id = install?.channel_id || process.env.CHANNEL_ID;
     if (!channel_id) return clear();
 
-    let baseText;
-    if (anon === "yes") baseText = `${username} shared: _"${description}"_`;
-    else baseText = `A ${team_name} teammate shared: _"${description}"_`;
+    let baseText = anon === "yes"
+      ? `${username} shared: _"${description}"_`
+      : `A ${team_name} teammate shared: _"${description}"_`;
     if (prayer) baseText += `\n🙏 Prayer request: _"${prayer}"_`;
 
     const now = Math.floor(Date.now() / 1000);
