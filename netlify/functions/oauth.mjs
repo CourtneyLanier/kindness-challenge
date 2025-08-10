@@ -108,9 +108,10 @@ export default async (req) => {
         <h3>Next steps (takes ~60 seconds):</h3>
         <ol>
           <li>Create or choose a Slack channel (e.g., <code>#kindness-campaign</code>) and add the app (Channel → <em>Add apps</em> → <strong>Rhoda</strong>).</li>
-          <li>In that channel, run <code>/kindness-config</code> to set your <strong>Start</strong>, <strong>End</strong>, and <strong>Goal</strong>. This also binds Rhoda to that channel.</li>
+          <li>In that channel, run <code>/kindness-config</code> to set your <strong>Start Date</strong>, <strong>End Date</strong>, and <strong>Goal</strong>. This also binds Rhoda to that channel.</li>
           <li>Teammates use <code>/kindness</code> to submit acts (optional anonymity + prayer request).</li>
-          <li>When you want a new season, run <code>/kindness-reset</code> to set fresh dates/goal.</li>
+          <li>Rhoda will update the channel so everyone can celebrate the act of kindness and your progress as a team.</li>
+		  <li>When you want a new season, run <code>/kindness-reset</code> to set fresh dates/goal.</li>
         </ol>
 
         <p>Landing page: <a href="${app_base_url}">${app_base_url}</a></p>
